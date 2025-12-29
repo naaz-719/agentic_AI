@@ -1,52 +1,39 @@
 import streamlit as st
 import core
 import agent
+import os
 
 st.set_page_config(page_title="Agentic AI Travel Planner")
 
 st.title("🧭 Agentic AI Travel Planner")
 
-source = st.text_input("Source city")
-destination = st.text_input("Destination city")
-days = st.number_input("Trip duration (days)", min_value=1, max_value=10, value=3)
 
-preferences = st.multiselect(
-    "Choose your interests",
-    ["Beaches", "Temples", "Shopping", "Nature", "Adventure"]
+source = st.text_input("Source City")
+destination = st.text_input("Destination City")
+days = st.number_input("Trip Duration", 1, 10, 3)
+
+preference = st.selectbox(
+    "Choose interest",
+    ["None","beaches","temples","shopping","nature","adventure"]
 )
 
-if st.button("Generate Trip"):
-    trip = core.plan_trip(source, destination, int(days))
+if st.button("Generate Plan"):
 
-    if "error" in trip:
-        st.error(trip["error"])
-    else:
-        st.success("Trip generated successfully")
+    trip = core.plan_trip(source, destination, days)
 
-        st.subheader("✈ Flight")
-        st.write(trip["flight_selected"])
+    st.success("Trip Generated")
 
-        st.subheader("🏨 Hotel")
-        st.write(trip["hotel_selected"])
+    st.subheader("Itinerary")
+    st.write(trip["itinerary"])
 
-        st.subheader("🗺 Itinerary")
-        st.write(trip["itinerary"])
+    st.subheader("Budget")
+    st.write(trip["budget"])
 
-        st.subheader("💰 Budget")
-        st.write(trip["budget"])
+    if st.button("🔊 Speak Budget"):
+        core.speak_budget(trip["budget"])
 
-        # agentic LLM reasoning summary
-        st.subheader("🧠 AI Travel Agent Summary")
-        summary = agent.ask_agent(
-            f"Plan a {days}-day trip from {source} to {destination} including {', '.join(preferences)}"
-        )
-        st.write(summary)
-
-        # PDF download
-        if st.button("📥 Download PDF"):
-            path = "/tmp/trip_plan.pdf"
-            core.generate_pdf(trip, path)
-            with open(path, "rb") as f:
-                st.download_button("Download Trip Plan", f, file_name="trip_plan.pdf")
-
-
+    if st.button("📥 Download PDF"):
+        path = "trip_plan.pdf"
+        core.generate_pdf(trip, path)
+        with open(path, "rb") as f:
+            st.download_button("Download", f, "trip_plan.pdf")
