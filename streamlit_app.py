@@ -78,4 +78,3 @@ with open(app_path, "w") as f:
 
 print("streamlit_app.py created successfully")
 
-!streamlit run /content/drive/MyDrive/travel_agent/streamlit_app.py
