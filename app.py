@@ -3,92 +3,108 @@ import json
 import os
 import sys
 
-# Add current directory to path for imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# --- STEP 1: FIX PATH ISSUES ---
+# This ensures Streamlit looks in the current folder for your uploaded .py files
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
-# Import your custom modules
+# --- STEP 2: ATTEMPT IMPORTS ---
 try:
     from travel_agent import run_travel_agent
     from final_output import generate_final_output
-except ImportError as e:
-    st.error(f"Failed to import local modules. Ensure travel_agent.py and final_output.py are in the same folder. Error: {e}")
-
-# --- DATA LOADING ---
-# Your tools (hotel_tool.py, etc.) expect global variables. 
-# We load them here to ensure they are available in the environment.
-def load_data():
+    import hotel_tool
+    import place_tool
+    # If you have a flights_tool.py, import it; otherwise we'll handle data locally
     try:
-        with open('flights.json', 'r') as f:
-            import flights_tool # This ensures the tool logic is loaded
-            flights_tool.flights_data = json.load(f)
-            
-        with open('hotels.json', 'r') as f:
-            import hotel_tool
-            hotel_tool.hotels_data = json.load(f)
-            
-        with open('places.json', 'r') as f:
-            import place_tool
-            place_tool.places_data = json.load(f)
-        return True
-    except FileNotFoundError as e:
-        st.error(f"Data file missing: {e}")
-        return False
+        import flights_tool
+    except ImportError:
+        flights_tool = None
+except ImportError as e:
+    st.error(f"❌ Critical Error: Missing Python files in directory. {e}")
+    st.stop()
 
-# --- STREAMLIT UI ---
-st.set_page_config(page_title="AI Travel Planner", page_icon="🌍", layout="centered")
+# --- STEP 3: ROBUST DATA LOADING ---
+def initialize_data():
+    """Loads JSON data and injects it into the tool modules' global scope."""
+    data_files = {
+        'flights.json': 'flights_data',
+        'hotels.json': 'hotels_data',
+        'places.json': 'places_data'
+    }
+    
+    success = True
+    for file_name, var_name in data_files.items():
+        file_path = os.path.join(current_dir, file_name)
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+                # Inject data into the specific tool modules where they are expected
+                if file_name == 'hotels.json':
+                    hotel_tool.hotels_data = data
+                elif file_name == 'places.json':
+                    place_tool.places_data = data
+                elif file_name == 'flights.json' and flights_tool:
+                    flights_tool.flights_data = data
+        else:
+            st.warning(f"⚠️ Missing file: {file_name}")
+            success = False
+    return success
+
+# --- STEP 4: UI DESIGN ---
+st.set_page_config(page_title="AI Travel Planner", page_icon="✈️")
 
 st.title("✈️ Agentic AI Travel Assistant")
-st.markdown("---")
+st.sidebar.header("Navigation & Info")
+st.sidebar.info("This agent uses LangChain to orchestrate flights, hotels, and weather tools.")
 
-if load_data():
-    # Input Form
-    with st.form("travel_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            source = st.text_input("From (Source)", value="Mumbai")
-            days = st.number_input("Duration (Nights)", min_value=1, value=3)
-        with col2:
-            destination = st.text_input("To (Destination)", value="Delhi")
-            budget = st.number_input("Budget (INR)", min_value=1000, value=50000)
+data_loaded = initialize_data()
+
+if not data_loaded:
+    st.error("Missing JSON datasets. Please ensure flights.json, hotels.json, and places.json are in the app folder.")
+    st.stop()
+
+# User Input Form
+with st.form("planner_form"):
+    col1, col2 = st.columns(2)
+    with col1:
+        source = st.text_input("Source City", value="Mumbai")
+        days = st.number_input("Trip Duration (Nights)", min_value=1, value=3)
+    with col2:
+        destination = st.text_input("Destination City", value="Delhi")
+        budget = st.number_input("Total Budget (INR)", min_value=1000, value=20000)
+    
+    st.markdown("---")
+    col3, col4 = st.columns(2)
+    with col3:
+        min_stars = st.slider("Min Hotel Rating", 1, 5, 3)
+    with col4:
+        p_type = st.selectbox("Attraction Preference", ["None", "temple", "park", "museum", "lake", "beach"])
+
+    submit_button = st.form_submit_button("Generate My Itinerary")
+
+# --- STEP 5: EXECUTION ---
+if submit_button:
+    with st.spinner(f"🤖 Agent is searching for the best deals in {destination}..."):
+        # Prepare params
+        travel_params = {
+            "source": source,
+            "destination": destination,
+            "days": days,
+            "budget": budget,
+            "min_hotel_stars": min_stars,
+            "place_type": None if p_type == "None" else p_type
+        }
         
-        st.markdown("### Preferences")
-        col3, col4 = st.columns(2)
-        with col3:
-            min_stars = st.slider("Min Hotel Stars", 1, 5, 3)
-        with col4:
-            p_type = st.selectbox("Attraction Type", ["None", "temple", "park", "museum", "lake", "beach"])
-
-        submit = st.form_submit_button("Generate Itinerary")
-
-    # Execution Logic
-    if submit:
-        with st.spinner("🤖 Agent is analyzing flights, hotels, and weather..."):
-            params = {
-                "source": source,
-                "destination": destination,
-                "days": days,
-                "budget": budget,
-                "min_hotel_stars": min_stars,
-                "place_type": None if p_type == "None" else p_type
-            }
+        try:
+            # Call the agent logic from travel_agent.py
+            agent_response = run_travel_agent(travel_params)
             
-            try:
-                # 1. Trigger the Agentic Logic
-                result = run_travel_agent(params)
-                
-                # 2. Display the Formatted Result
-                st.markdown("### 📋 Your Custom Travel Plan")
-                formatted_itinerary = generate_final_output(result, days)
-                st.info(formatted_itinerary)
-                
-                # Success indicator
-                st.balloons()
-                
-            except Exception as e:
-                st.error(f"Planning failed: {str(e)}")
-else:
-    st.warning("Please upload flights.json, hotels.json, and places.json to the app directory.")
-
-# Sidebar info
-st.sidebar.header("About")
-st.sidebar.info("This assistant uses LangChain Agents to query local datasets and external weather APIs to build a budget-conscious travel plan.")
+            # Format using final_output.py
+            itinerary_text = generate_final_output(agent_response, days)
+            
+            st.success("✅ Itinerary Generated Successfully!")
+            st.markdown(itinerary_text)
+            
+        except Exception as e:
+            st.error(f"An error occurred during planning: {e}")
