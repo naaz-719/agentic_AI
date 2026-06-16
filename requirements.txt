@@ -4,3 +4,4 @@ langchain-openai
 langchain-community
 requests
 python-dotenv
+plotly
